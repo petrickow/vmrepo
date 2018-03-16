@@ -1,0 +1,234 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+
+Vagrant.configure("2") do |config|
+
+# hardware
+  ram_mb = 8000
+  n_cpu = 2
+  machine_name = "theMachineName"
+  config.vm.define "#{machine_name}"
+
+# network
+  ip_postfix = '10' # node x (x0) <--
+  mac_addr = "00:00:00:00:00:00"
+
+  config.vm.box = "catoda/theBoxYouWant"
+
+
+# For cluster setup:
+   config.vm.network "public_network",
+                      bridge: 'eth0'
+                      dhcp_enabled: true,
+                      nic_type: "virtio"
+   end
+
+   if ip_postfix != '10' # as long as we're not building for localhost (single nic config)
+   config.vm.network "private_network",
+                     ip: "192.168.201.#{ip_postfix}",
+                     dhcp_enabled: false,
+                     nic_type: "virtio"
+   end
+
+# VirtualBox specifics
+  config.vm.provider "virtualbox" do |vbox|
+
+    some_extra_disk = "/opt/aDiskFor_#{machine_name}.vmdk"
+
+
+    vbox.name = machine_name
+    vbox.memory = ram_mb
+    vbox.cpus = n_cpu
+
+    unless File.exist?(some_extra_disk) # creates vmdk file
+      vbox.customize ['createhd',
+                      '--filename', some_extra_disk,
+                      '--size', 100*1024, #x00GB
+                      '--variant', 'Fixed'
+      ]
+    end
+
+    # attach the drives
+    vbox.customize ['storageattach', :id,
+                    '--storagectl', 'SATA Controller',
+                    '--port', 1,
+                    '--device', 0,
+                    '--type', 'hdd',
+                    '--medium', some_extra_disk]
+
+    # Better hdd-performance on vbox
+    # stolen from update in: https://joeshaw.org/terrible-vagrant-virtualbox-performance-on-mac-os-x/
+    # https://www.electricmonk.nl/log/2016/03/14/terrible-virtualbox-disk-performance/
+    vbox.customize [
+      "storagectl", :id,
+      "--name", "SATA Controller",
+      "--hostiocache", "on"
+    ]
+
+    vbox.customize ['modifyvm', :id,
+                    '--clipboard',
+                    'bidirectional'
+    ]
+
+    # A more modern chipset compared to PIXX3
+    #
+    vbox.customize ['modifyvm', :id,
+                    '--chipset', 'ich9'
+    ]
+  end
+
+# VMware specifics
+  config.vm.provider "vmware" do |vmware|
+    vmware.name = machine_name
+    vmware.vmx["memsize"] = ram_mb
+    vmware.vmx["numvcpus"] = n_cpu
+  end
+
+
+# ESXi specifics
+  config.vm.provider :vmware_esxi do |esxi|
+
+    #  REQUIRED!  ESXi hostname/IP
+    esxi.esxi_hostname = 'YOUR HOST'
+
+    #  ESXi username
+    esxi.esxi_username = 'root'
+
+    #  IMPORTANT!  Set ESXi password.
+    #    1) 'prompt:'
+    #    2) 'file:'  or  'file:my_secret_file'
+    #    3) 'env:'  or 'env:my_secret_env_var'
+    #    4) 'key:'  or  key:~/.ssh/some_ssh_private_key'
+    #    5) or esxi.esxi_password = 'my_esxi_password'
+    #``
+    esxi.esxi_password = 'prompt:'
+
+    #  SSH port.
+    #esxi.esxi_hostport = 22
+
+    #  HIGHLY RECOMMENDED!  Virtual Network
+    #    You should specify a Virtual Network!  If it's not specified, the
+    #    default is to use the first found.  You can specify up to 4 virtual
+    #    networks using an array format.
+    esxi.esxi_virtual_network = ['VM Network']
+
+    #  OPTIONAL.  Specify a Disk Store
+    esxi.esxi_disk_store = 'datastore1'
+
+    #  OPTIONAL.  Resource Pool
+    #     Vagrant will NOT create a Resource pool it for you.
+    #esxi.esxi_resource_pool = '/Vagrant'
+
+    #  OPTIONAL.  Guest VM name to use.
+    #    The Default will be automatically generated.
+    esxi.guest_name = 'YOUR NAME'
+
+    #  OPTIONAL.  When automatically naming VMs, use this prifix.
+    #esxi.guest_name_prefix = 'V-'
+
+    #  OPTIONAL.  Set the guest username login.  The default is 'vagrant'.
+    #esxi.guest_username = 'vagrant'
+
+    #  OPTIONAL.  Memory size override
+    esxi.guest_memsize = ram_mb
+
+    #  OPTIONAL.  Virtual CPUs override
+    esxi.guest_numvcpus = n_cpu
+
+    #  OPTIONAL & RISKY.  Specify up to 4 MAC addresses
+    #    The default is ovftool to automatically generate a MAC address.
+    #    You can specify an array of MAC addresses using upper or lower case,
+    #    separated by colons ':'.
+    #esxi.guest_mac_address = ['00:00:00:00:00:00']
+
+    #   OPTIONAL & RISKY.  Specify a guest_nic_type
+    #     The validated list of guest_nic_types are 'e1000', 'e1000e', 'vmxnet',
+    #     'vmxnet2', 'vmxnet3', 'Vlance', and 'Flexible'.
+    esxi.guest_nic_type = 'vmxnet3'
+
+    #  OPTIONAL. Specify a disk type.
+    #    If unspecified, it will be set to 'thin'.  Otherwise, you can set to
+    #    'thin', 'thick', or 'eagerzeroedthick'
+    #esxi.guest_disk_type = 'thick'
+
+    #  OPTIONAL.  Create additional storage for guests.
+    #    You can specify an array of upto 14 virtual disk sizes (in GB) that you
+    #    would like the provider to create once the guest has been created.
+    #esxi.guest_storage = [800,30] # TODO: find a way of instanciating these on separate drive
+
+    #  OPTIONAL. specify snapshot options.
+    #esxi.guest_snapshot_includememory = 'true'
+    #esxi.guest_snapshot_quiesced = 'true'
+
+    #  RISKY. guest_guestos
+    #    https://github.com/josenk/vagrant-vmware-esxi/ESXi_guest_guestos_types.md
+    esxi.guest_guestos = 'centos6-64'
+
+    #  OPTIONAL. guest_virtualhw_version
+    #    ESXi 6.5 supports these versions. 4,7,8,9,10,11,12 & 13.
+    esxi.guest_virtualhw_version = '13'
+
+    #  RISKY. guest_custom_vmx_settings
+    #
+    #esxi.guest_custom_vmx_settings = [['vhv.enable','TRUE'], ['floppy0.present','TRUE']]
+
+    #  OPTIONAL. local_lax
+    #esxi.local_lax = 'true'
+
+    #  OPTIONAL. Guest IP Caching
+    #esxi.local_use_ip_cache = 'True'
+
+    #  DANGEROUS!  Allow Overwrite
+    #    If unspecified, the default is to produce an error if overwriting
+    #    vm's and packages.
+    #esxi.local_allow_overwrite = 'True'
+
+    #  Plugin debug output.
+    #    Please send any bug reports with debug this output...
+    esxi.debug = 'true vmx ip'
+
+  end
+
+
+  ###################################
+#Provision:
+  # Enable provisioning with a shell script. Additional provisioners such as
+  # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
+  # documentation for more information about their specific syntax and use.
+
+  config.vm.provision :shell, path: "provisioning/1_system-base.sh"
+  config.vm.provision :shell, path: "provisioning/os.sh"
+  config.vm.provision :shell, path: "provisioning/hardening.sh"
+end
+
+########## Helper functions #################
+# Check host memory and give divident/divisor amount (MB) to VM
+def getPhysicalMemory(divident, divisor)
+
+  host = RbConfig::CONFIG['host_os']
+  # Get total physical ram in kb
+  if host =~ /darwin/ # MAC
+    # sysctl returns Bytes and we need to convert to kb
+    mem_kb = `sysctl -n hw.memsize`.to_i / 1024
+  elsif host =~ /linux/ # LINUX
+    # meminfo shows KB and we need to convert to MB
+    mem_kb = `grep 'MemTotal' /proc/meminfo | sed -e 's/MemTotal://' -e 's/ kB//'`.to_i
+  elsif host =~ /mswin|mingw|cygwin/ # WINDOWS
+    # Windows code via https://github.com/rdsubhas/vagrant-faster
+    mem_kb = `wmic computersystem Get TotalPhysicalMemory`.split[1].to_i / 1024
+  end
+
+  if (divident >= divisor || divisor == 0)
+    puts "#{divident}/#{divisor} RAM allocation is not allowed"
+    exit 1
+  end
+
+
+  mem_mb = mem_kb / 1024 / divisor
+  return mem_mb * divident # return mb of ram
+end
